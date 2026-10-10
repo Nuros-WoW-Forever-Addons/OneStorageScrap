@@ -1,0 +1,11 @@
+## Interface: 16001, 11200, 20400, 30300, 110000
+## Title: OneStorage |cff00ccffScrap|r
+## Notes: Safe automated vendor junk seller, equipment auto-repair, and custom scrap list for OneStorage Suite.
+## Author: OneStorage Suite Team
+## Version: 0.0.1
+## Dependencies: OneStorageUtils
+## OptionalDeps: OneStorageBag
+## SavedVariables: OneStorageScrapDB
+
+Core.lua
+AutoRepair.lua
