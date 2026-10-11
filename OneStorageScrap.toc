@@ -3,6 +3,7 @@
 ## Notes: Safe automated vendor junk seller, equipment auto-repair, and custom scrap list for OneStorage Suite.
 ## Author: OneStorage Suite Team
 ## Version: 0.0.1
+## IconTexture: Interface\Icons\INV_Misc_Coin_01
 ## Dependencies: OneStorageUtils
 ## OptionalDeps: OneStorageBag
 ## SavedVariables: OneStorageScrapDB
