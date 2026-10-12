@@ -10,8 +10,7 @@ local Utils = _G.OneStorageUtils
 local ContainerHelper = Utils and Utils.ContainerHelper
 
 local function AttemptAutoRepair()
-    local db = _G.OneStorageScrapDB
-    if not db or db.autoRepair == false then return end
+    if not OneStorageScrap:GetOption("autoRepair") then return end
     
     if not CanMerchantRepair or not CanMerchantRepair() then return end
     
@@ -19,11 +18,11 @@ local function AttemptAutoRepair()
     if not canRepair or not repairCost or repairCost <= 0 then return end
     
     -- 1. Try Guild Bank Funds
-    if db.useGuildRepair ~= false and CanGuildBankRepair and CanGuildBankRepair() then
+    if OneStorageScrap:GetOption("useGuildRepair") and CanGuildBankRepair and CanGuildBankRepair() then
         local guildMoney = GetGuildBankWithdrawMoney and GetGuildBankWithdrawMoney() or 0
         if guildMoney == -1 or guildMoney >= repairCost then
             RepairAllItems(true)
-            if db.printSummary ~= false and ContainerHelper then
+            if OneStorageScrap:GetOption("printSummary") and ContainerHelper then
                 print(string.format("|cff00ccff[OneStorageScrap]|r Repaired all items using Guild Funds for %s.",
                     ContainerHelper:FormatMoney(repairCost)))
             end
@@ -35,7 +34,7 @@ local function AttemptAutoRepair()
     local playerMoney = GetMoney() or 0
     if playerMoney >= repairCost then
         RepairAllItems(false)
-        if db.printSummary ~= false and ContainerHelper then
+        if OneStorageScrap:GetOption("printSummary") and ContainerHelper then
             print(string.format("|cff00ccff[OneStorageScrap]|r Repaired all items for %s.",
                 ContainerHelper:FormatMoney(repairCost)))
         end
@@ -55,17 +54,24 @@ end)
 -- Slash Command Extension
 SLASH_ONESTORAGEREPAIR1 = "/osrepair"
 SlashCmdList["ONESTORAGEREPAIR"] = function(msg)
-    local db = _G.OneStorageScrapDB
-    if not db then return end
-    
     local cmd = (msg or ""):lower():match("^%s*(.-)%s*$")
-    if cmd == "guild" then
-        db.useGuildRepair = not db.useGuildRepair
-        local state = db.useGuildRepair and "|cff00ff00ENABLED|r" or "|cffff0000DISABLED|r"
+    if cmd == "opt" or cmd == "options" or cmd == "config" or cmd == "gui" or cmd == "" then
+        OneStorageScrap:ToggleOptions()
+    elseif cmd == "guild" then
+        local current = OneStorageScrap:GetOption("useGuildRepair")
+        OneStorageScrap:SetOption("useGuildRepair", not current)
+        local state = OneStorageScrap:GetOption("useGuildRepair") and "|cff00ff00ENABLED|r" or "|cffff0000DISABLED|r"
         print("|cff00ccff[OneStorageScrap]|r Guild fund auto-repair is now " .. state)
+        if OneStorageScrap.optionsFrame and OneStorageScrap.optionsFrame:IsShown() then
+            OneStorageScrap.optionsFrame:RefreshOptions()
+        end
     else
-        db.autoRepair = not db.autoRepair
-        local state = db.autoRepair and "|cff00ff00ENABLED|r" or "|cffff0000DISABLED|r"
+        local current = OneStorageScrap:GetOption("autoRepair")
+        OneStorageScrap:SetOption("autoRepair", not current)
+        local state = OneStorageScrap:GetOption("autoRepair") and "|cff00ff00ENABLED|r" or "|cffff0000DISABLED|r"
         print("|cff00ccff[OneStorageScrap]|r Auto-repair is now " .. state)
+        if OneStorageScrap.optionsFrame and OneStorageScrap.optionsFrame:IsShown() then
+            OneStorageScrap.optionsFrame:RefreshOptions()
+        end
     end
 end

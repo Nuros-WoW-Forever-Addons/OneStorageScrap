@@ -1,7 +1,8 @@
 --[[
     OneStorageScrap - Core.lua
     Automated vendor junk seller with safe transaction batching,
-    chat profit reports, and custom scrap whitelist/blacklist overrides.
+    chat profit reports, custom scrap whitelist/blacklist overrides,
+    and graphical options panel.
 --]]
 
 local addonName, addonTable = ...
@@ -10,17 +11,35 @@ local OneStorageScrap = _G.OneStorageScrap
 
 local Utils = _G.OneStorageUtils
 local ContainerHelper = Utils and Utils.ContainerHelper
+local FrameHelper = Utils and Utils.FrameHelper
 
 local isSelling = false
 local itemsSold = 0
 local startMoney = 0
 
 local defaultDB = {
-    autoSell = true,
-    printSummary = true,
-    safeList = {}, -- itemID -> true (never sell)
-    junkList = {}, -- itemID -> true (always sell)
+    autoSell = true,           -- Master toggle for automated selling
+    sellGreys = true,          -- Auto-sell poor (grey / quality 0) items
+    sellWhites = false,        -- Auto-sell common (white / quality 1) items
+    autoRepair = true,         -- Auto-repair equipment at repair vendors
+    useGuildRepair = false,    -- Use guild bank funds if available
+    printSummary = true,       -- Print sales & repair reports to chat
+    safeList = {},             -- [itemID] = true (never sell)
+    junkList = {},             -- [itemID] = true (always sell)
+    optionsPosition = nil,     -- Saved window coordinates
 }
+
+function OneStorageScrap:GetOption(key)
+    if _G.OneStorageScrapDB and _G.OneStorageScrapDB[key] ~= nil then
+        return _G.OneStorageScrapDB[key]
+    end
+    return defaultDB[key]
+end
+
+function OneStorageScrap:SetOption(key, val)
+    _G.OneStorageScrapDB = _G.OneStorageScrapDB or {}
+    _G.OneStorageScrapDB[key] = val
+end
 
 -------------------------------------------------------------------------------
 -- Custom Scrap Check Hook Registration
@@ -30,21 +49,39 @@ local function SetupScrapHook()
     if not ContainerHelper or not ContainerHelper.SetScrapCheckCallback then return end
     
     ContainerHelper:SetScrapCheckCallback(function(bagID, slotID, itemID, quality)
-        local db = _G.OneStorageScrapDB or defaultDB
+        local safeList = OneStorageScrap:GetOption("safeList")
+        local junkList = OneStorageScrap:GetOption("junkList")
         
         -- 1. Safe List (Protected: Never sell)
-        if itemID and db.safeList and db.safeList[itemID] then
+        if itemID and safeList and safeList[itemID] then
             return false
         end
         
         -- 2. Custom Junk List (Always sell)
-        if itemID and db.junkList and db.junkList[itemID] then
+        if itemID and junkList and junkList[itemID] then
             return true
         end
         
-        -- 3. Default: Poor Quality (Grey)
-        if quality == 0 then
+        -- If auto-selling is disabled globally, do not mark defaults as junk
+        if not OneStorageScrap:GetOption("autoSell") then
+            return false
+        end
+        
+        -- 3. Poor Quality (Grey)
+        if OneStorageScrap:GetOption("sellGreys") and quality == 0 then
             return true
+        end
+        
+        -- 4. Common Quality (White)
+        if OneStorageScrap:GetOption("sellWhites") and quality == 1 and itemID then
+            local _, _, _, _, _, _, _, _, _, _, sellPrice, classID = GetItemInfo(itemID)
+            -- Safety: must have a vendor sell price, and cannot be a quest item (classID 12)
+            if sellPrice and sellPrice > 0 and classID ~= 12 then
+                local info = ContainerHelper:GetItemInfo(bagID, slotID)
+                if not (info and info.noValue) then
+                    return true
+                end
+            end
         end
         
         return false
@@ -56,8 +93,7 @@ end
 -------------------------------------------------------------------------------
 
 function OneStorageScrap:SellJunk()
-    local db = _G.OneStorageScrapDB or defaultDB
-    if not db.autoSell then return end
+    if not self:GetOption("autoSell") then return end
     if isSelling then return end
     
     local queue = {}
@@ -97,27 +133,319 @@ function OneStorageScrap:SellJunk()
             end
         else
             -- Selling complete; wait 0.3s for final money update
-            if C_Timer and C_Timer.After then
-                C_Timer.After(0.3, function()
-                    local profit = math.max(0, (GetMoney() or 0) - startMoney)
-                    if db.printSummary and itemsSold > 0 and profit > 0 then
-                        print(string.format("|cff00ccff[OneStorageScrap]|r Sold %d junk items for %s.",
-                            itemsSold, ContainerHelper:FormatMoney(profit)))
-                    end
-                    isSelling = false
-                end)
-            else
+            local function FinishSelling()
                 local profit = math.max(0, (GetMoney() or 0) - startMoney)
-                if db.printSummary and itemsSold > 0 and profit > 0 then
+                if OneStorageScrap:GetOption("printSummary") and itemsSold > 0 and profit > 0 then
                     print(string.format("|cff00ccff[OneStorageScrap]|r Sold %d junk items for %s.",
                         itemsSold, ContainerHelper:FormatMoney(profit)))
                 end
                 isSelling = false
             end
+            
+            if C_Timer and C_Timer.After then
+                C_Timer.After(0.3, FinishSelling)
+            else
+                FinishSelling()
+            end
         end
     end
     
     ProcessBatch(1)
+end
+
+-------------------------------------------------------------------------------
+-- Options Panel (Standalone & Blizzard Settings)
+-------------------------------------------------------------------------------
+
+function OneStorageScrap:SaveOptionsPosition()
+    if not self.optionsFrame then return end
+    local point, _, relPoint, xOfs, yOfs = self.optionsFrame:GetPoint(1)
+    if point then
+        _G.OneStorageScrapDB = _G.OneStorageScrapDB or {}
+        _G.OneStorageScrapDB.optionsPosition = {
+            point = point,
+            relativePoint = relPoint or point,
+            x = math.floor(xOfs + 0.5),
+            y = math.floor(yOfs + 0.5),
+        }
+    end
+end
+
+function OneStorageScrap:RestoreOptionsPosition()
+    if not self.optionsFrame then return end
+    local pos = _G.OneStorageScrapDB and _G.OneStorageScrapDB.optionsPosition
+    self.optionsFrame:ClearAllPoints()
+    if pos and pos.point and pos.x and pos.y then
+        self.optionsFrame:SetPoint(pos.point, UIParent, pos.relativePoint or pos.point, pos.x, pos.y)
+    else
+        self.optionsFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 40)
+    end
+end
+
+function OneStorageScrap:CreateOptionsFrame()
+    if self.optionsFrame then return self.optionsFrame end
+    
+    local opt = CreateFrame("Frame", "OneStorageScrapOptionsFrame", UIParent, BackdropTemplateMixin and "BackdropTemplate" or nil)
+    opt:SetSize(260, 424)
+    opt:SetFrameStrata("DIALOG")
+    opt:SetToplevel(true)
+    opt:SetClampedToScreen(true)
+    opt:Hide()
+    self.optionsFrame = opt
+    
+    -- Metal frame styling
+    if FrameHelper then
+        FrameHelper:RegisterEscClose("OneStorageScrapOptionsFrame")
+        FrameHelper:ApplySimplePanel(opt, "Scrap & Repair Options")
+    end
+    
+    -- Draggable
+    opt:SetMovable(true)
+    opt:EnableMouse(true)
+    opt:RegisterForDrag("LeftButton")
+    opt:SetScript("OnDragStart", function(s) s:StartMoving() end)
+    opt:SetScript("OnDragStop", function(s)
+        s:StopMovingOrSizing()
+        OneStorageScrap:SaveOptionsPosition()
+    end)
+    
+    self:RestoreOptionsPosition()
+    
+    local controls = {}
+    local yOffset = -38
+    local marginX = 16
+    
+    local function NotifyBags()
+        if OneStorageBag and OneStorageBag.frame and OneStorageBag.frame:IsShown() then
+            OneStorageBag:RefreshLayout()
+        end
+    end
+    
+    -- SECTION 1: Auto-Sell Settings
+    local s1Header = opt:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    s1Header:SetPoint("TOPLEFT", opt, "TOPLEFT", marginX, yOffset)
+    s1Header:SetText("|cffffcc00Auto-Sell Settings|r")
+    yOffset = yOffset - 24
+    
+    local autoSellCb = FrameHelper:CreateCheckbox(
+        opt,
+        "OneStorageScrapOpt_AutoSell",
+        "Enable Auto-Selling",
+        "Automatically sell junk and scrap items when opening a merchant window.",
+        function() return OneStorageScrap:GetOption("autoSell") end,
+        function(val)
+            OneStorageScrap:SetOption("autoSell", val)
+            NotifyBags()
+        end
+    )
+    autoSellCb:SetPoint("TOPLEFT", opt, "TOPLEFT", marginX, yOffset)
+    table.insert(controls, autoSellCb)
+    yOffset = yOffset - 26
+    
+    local sellGreysCb = FrameHelper:CreateCheckbox(
+        opt,
+        "OneStorageScrapOpt_SellGreys",
+        "Auto-Sell Poor (Grey) Items",
+        "Automatically sell poor quality (grey) items to vendors.",
+        function() return OneStorageScrap:GetOption("sellGreys") end,
+        function(val)
+            OneStorageScrap:SetOption("sellGreys", val)
+            NotifyBags()
+        end
+    )
+    sellGreysCb:SetPoint("TOPLEFT", opt, "TOPLEFT", marginX, yOffset)
+    table.insert(controls, sellGreysCb)
+    yOffset = yOffset - 26
+    
+    local sellWhitesCb = FrameHelper:CreateCheckbox(
+        opt,
+        "OneStorageScrapOpt_SellWhites",
+        "Auto-Sell Common (White) Items",
+        "Automatically sell common quality (white) items with sell value (excluding quest and safe-listed items).",
+        function() return OneStorageScrap:GetOption("sellWhites") end,
+        function(val)
+            OneStorageScrap:SetOption("sellWhites", val)
+            NotifyBags()
+        end
+    )
+    sellWhitesCb:SetPoint("TOPLEFT", opt, "TOPLEFT", marginX, yOffset)
+    table.insert(controls, sellWhitesCb)
+    yOffset = yOffset - 32
+    
+    -- SECTION 2: Auto-Repair Settings
+    local s2Header = opt:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    s2Header:SetPoint("TOPLEFT", opt, "TOPLEFT", marginX, yOffset)
+    s2Header:SetText("|cffffcc00Auto-Repair Settings|r")
+    yOffset = yOffset - 24
+    
+    local autoRepairCb = FrameHelper:CreateCheckbox(
+        opt,
+        "OneStorageScrapOpt_AutoRepair",
+        "Enable Auto-Repair",
+        "Automatically repair damaged equipment when visiting a repair vendor.",
+        function() return OneStorageScrap:GetOption("autoRepair") end,
+        function(val)
+            OneStorageScrap:SetOption("autoRepair", val)
+        end
+    )
+    autoRepairCb:SetPoint("TOPLEFT", opt, "TOPLEFT", marginX, yOffset)
+    table.insert(controls, autoRepairCb)
+    yOffset = yOffset - 26
+    
+    local guildRepairCb = FrameHelper:CreateCheckbox(
+        opt,
+        "OneStorageScrapOpt_GuildRepair",
+        "Use Guild Funds First",
+        "Attempt to pay for equipment repairs using guild bank funds before personal money.",
+        function() return OneStorageScrap:GetOption("useGuildRepair") end,
+        function(val)
+            OneStorageScrap:SetOption("useGuildRepair", val)
+        end
+    )
+    guildRepairCb:SetPoint("TOPLEFT", opt, "TOPLEFT", marginX, yOffset)
+    table.insert(controls, guildRepairCb)
+    yOffset = yOffset - 32
+    
+    -- SECTION 3: Chat Notifications
+    local s3Header = opt:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    s3Header:SetPoint("TOPLEFT", opt, "TOPLEFT", marginX, yOffset)
+    s3Header:SetText("|cffffcc00Chat & Notifications|r")
+    yOffset = yOffset - 24
+    
+    local summaryCb = FrameHelper:CreateCheckbox(
+        opt,
+        "OneStorageScrapOpt_PrintSummary",
+        "Print Summary to Chat",
+        "Display profit and repair cost summaries in the chat window.",
+        function() return OneStorageScrap:GetOption("printSummary") end,
+        function(val)
+            OneStorageScrap:SetOption("printSummary", val)
+        end
+    )
+    summaryCb:SetPoint("TOPLEFT", opt, "TOPLEFT", marginX, yOffset)
+    table.insert(controls, summaryCb)
+    yOffset = yOffset - 30
+    
+    -- SECTION 4: Custom Lists & Overrides
+    local s4Header = opt:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    s4Header:SetPoint("TOPLEFT", opt, "TOPLEFT", marginX, yOffset)
+    s4Header:SetText("|cffffcc00Custom Lists|r")
+    yOffset = yOffset - 22
+    
+    local listInfo = opt:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    listInfo:SetPoint("TOPLEFT", opt, "TOPLEFT", marginX, yOffset)
+    
+    local function UpdateListInfo()
+        local safeCount, junkCount = 0, 0
+        local safeList = OneStorageScrap:GetOption("safeList")
+        local junkList = OneStorageScrap:GetOption("junkList")
+        if safeList then for _ in pairs(safeList) do safeCount = safeCount + 1 end end
+        if junkList then for _ in pairs(junkList) do junkCount = junkCount + 1 end end
+        listInfo:SetText(string.format("Protected: |cff00ff00%d|r   |   Custom Junk: |cffffcc00%d|r", safeCount, junkCount))
+    end
+    UpdateListInfo()
+    yOffset = yOffset - 24
+    
+    local clearBtn = FrameHelper:CreateSilverButton(opt, "OneStorageScrapOpt_ClearBtn", "Clear Custom Lists")
+    clearBtn:SetSize(160, 22)
+    clearBtn:SetPoint("TOPLEFT", opt, "TOPLEFT", marginX, yOffset)
+    clearBtn:SetScript("OnClick", function()
+        OneStorageScrap:SetOption("safeList", {})
+        OneStorageScrap:SetOption("junkList", {})
+        UpdateListInfo()
+        NotifyBags()
+        print("|cff00ccff[OneStorageScrap]|r Custom safe list and junk list have been cleared.")
+    end)
+    yOffset = yOffset - 32
+    
+    -- SECTION 5: Window Settings
+    local s5Header = opt:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    s5Header:SetPoint("TOPLEFT", opt, "TOPLEFT", marginX, yOffset)
+    s5Header:SetText("|cffffcc00Window Settings|r")
+    yOffset = yOffset - 24
+    
+    local resetPosBtn = FrameHelper:CreateSilverButton(opt, "OneStorageScrapOpt_ResetPosBtn", "Reset Position")
+    resetPosBtn:SetSize(140, 22)
+    resetPosBtn:SetPoint("TOPLEFT", opt, "TOPLEFT", marginX, yOffset)
+    resetPosBtn:SetScript("OnClick", function()
+        if _G.OneStorageScrapDB then _G.OneStorageScrapDB.optionsPosition = nil end
+        OneStorageScrap:RestoreOptionsPosition()
+    end)
+    
+    opt.RefreshOptions = function()
+        for _, c in ipairs(controls) do
+            if c.Refresh then c:Refresh() end
+        end
+        UpdateListInfo()
+    end
+    
+    return opt
+end
+
+function OneStorageScrap:ShowOptions()
+    local opt = self.optionsFrame or self:CreateOptionsFrame()
+    if opt.RefreshOptions then opt:RefreshOptions() end
+    opt:Show()
+end
+
+function OneStorageScrap:ToggleOptions()
+    local opt = self.optionsFrame or self:CreateOptionsFrame()
+    if opt:IsShown() then
+        opt:Hide()
+    else
+        self:ShowOptions()
+    end
+end
+
+-------------------------------------------------------------------------------
+-- Blizzard Interface Options Category
+-------------------------------------------------------------------------------
+
+function OneStorageScrap:RegisterBlizzardCategory()
+    if self.blizzardCategoryPanel then return end
+
+    local panel = CreateFrame("Frame", "OneStorageScrapBlizzardOptions", UIParent)
+    panel.name = "OneStorage Scrap"
+
+    local icon = panel:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(28, 28)
+    icon:SetPoint("TOPLEFT", panel, "TOPLEFT", 16, -16)
+    icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_01")
+
+    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("LEFT", icon, "RIGHT", 10, 0)
+    title:SetText("OneStorage Scrap")
+
+    local subText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    subText:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", 0, -8)
+    subText:SetText("Automated vendor junk seller and equipment auto-repair utility.")
+
+    local openBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    openBtn:SetSize(190, 26)
+    openBtn:SetText("Open Scrap Options")
+    openBtn:SetPoint("TOPLEFT", subText, "BOTTOMLEFT", 0, -16)
+    openBtn:SetScript("OnClick", function()
+        if InterfaceOptionsFrame and InterfaceOptionsFrame:IsShown() then
+            HideUIPanel(InterfaceOptionsFrame)
+        end
+        if SettingsPanel and SettingsPanel:IsShown() then
+            HideUIPanel(SettingsPanel)
+        end
+        OneStorageScrap:ShowOptions()
+    end)
+
+    if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
+        local category = Settings.RegisterCanvasLayoutCategory(panel, "OneStorage Scrap")
+        if category and category.SetIcon then
+            pcall(function() category:SetIcon("Interface\\Icons\\INV_Misc_Coin_01") end)
+        end
+        Settings.RegisterAddOnCategory(category)
+        panel.categoryID = category:GetID()
+    elseif InterfaceOptions_AddCategory then
+        InterfaceOptions_AddCategory(panel)
+    end
+
+    self.blizzardCategoryPanel = panel
 end
 
 -------------------------------------------------------------------------------
@@ -142,6 +470,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
         
     elseif event == "PLAYER_LOGIN" then
         SetupScrapHook()
+        OneStorageScrap:RegisterBlizzardCategory()
         
     elseif event == "MERCHANT_SHOW" then
         OneStorageScrap:SellJunk()
@@ -158,23 +487,72 @@ end)
 SLASH_ONESTORAGESCRAP1 = "/onescrap"
 SLASH_ONESTORAGESCRAP2 = "/osscrap"
 SlashCmdList["ONESTORAGESCRAP"] = function(msg)
-    local db = _G.OneStorageScrapDB or defaultDB
-    local cmd, arg = strsplit(" ", (msg or ""):lower(), 2)
+    local cmd, arg = strsplit(" ", (msg or ""):lower():match("^%s*(.-)%s*$"), 2)
     
-    if cmd == "toggle" then
-        db.autoSell = not db.autoSell
-        local status = db.autoSell and "|cff00ff00ENABLED|r" or "|cffff0000DISABLED|r"
+    if cmd == "opt" or cmd == "options" or cmd == "config" or cmd == "gui" or cmd == "" then
+        OneStorageScrap:ToggleOptions()
+        
+    elseif cmd == "toggle" then
+        local current = OneStorageScrap:GetOption("autoSell")
+        OneStorageScrap:SetOption("autoSell", not current)
+        local status = OneStorageScrap:GetOption("autoSell") and "|cff00ff00ENABLED|r" or "|cffff0000DISABLED|r"
         print("|cff00ccff[OneStorageScrap]|r Auto-selling is now " .. status)
+        if OneStorageBag and OneStorageBag.frame and OneStorageBag.frame:IsShown() then
+            OneStorageBag:RefreshLayout()
+        end
+        if OneStorageScrap.optionsFrame and OneStorageScrap.optionsFrame:IsShown() then
+            OneStorageScrap.optionsFrame:RefreshOptions()
+        end
+        
+    elseif cmd == "greys" or cmd == "grey" then
+        local current = OneStorageScrap:GetOption("sellGreys")
+        OneStorageScrap:SetOption("sellGreys", not current)
+        local status = OneStorageScrap:GetOption("sellGreys") and "|cff00ff00ENABLED|r" or "|cffff0000DISABLED|r"
+        print("|cff00ccff[OneStorageScrap]|r Auto-sell greys is now " .. status)
+        if OneStorageBag and OneStorageBag.frame and OneStorageBag.frame:IsShown() then
+            OneStorageBag:RefreshLayout()
+        end
+        if OneStorageScrap.optionsFrame and OneStorageScrap.optionsFrame:IsShown() then
+            OneStorageScrap.optionsFrame:RefreshOptions()
+        end
+        
+    elseif cmd == "whites" or cmd == "white" then
+        local current = OneStorageScrap:GetOption("sellWhites")
+        OneStorageScrap:SetOption("sellWhites", not current)
+        local status = OneStorageScrap:GetOption("sellWhites") and "|cff00ff00ENABLED|r" or "|cffff0000DISABLED|r"
+        print("|cff00ccff[OneStorageScrap]|r Auto-sell whites is now " .. status)
+        if OneStorageBag and OneStorageBag.frame and OneStorageBag.frame:IsShown() then
+            OneStorageBag:RefreshLayout()
+        end
+        if OneStorageScrap.optionsFrame and OneStorageScrap.optionsFrame:IsShown() then
+            OneStorageScrap.optionsFrame:RefreshOptions()
+        end
+        
+    elseif cmd == "repair" then
+        local current = OneStorageScrap:GetOption("autoRepair")
+        OneStorageScrap:SetOption("autoRepair", not current)
+        local status = OneStorageScrap:GetOption("autoRepair") and "|cff00ff00ENABLED|r" or "|cffff0000DISABLED|r"
+        print("|cff00ccff[OneStorageScrap]|r Auto-repair is now " .. status)
+        if OneStorageScrap.optionsFrame and OneStorageScrap.optionsFrame:IsShown() then
+            OneStorageScrap.optionsFrame:RefreshOptions()
+        end
         
     elseif cmd == "add" and arg then
         local itemID = tonumber(arg) or tonumber(arg:match("item:(%d+)"))
         if itemID then
-            db.junkList[itemID] = true
-            db.safeList[itemID] = nil
+            local junkList = OneStorageScrap:GetOption("junkList") or {}
+            local safeList = OneStorageScrap:GetOption("safeList") or {}
+            junkList[itemID] = true
+            safeList[itemID] = nil
+            OneStorageScrap:SetOption("junkList", junkList)
+            OneStorageScrap:SetOption("safeList", safeList)
             local name = GetItemInfo(itemID) or ("Item " .. itemID)
             print("|cff00ccff[OneStorageScrap]|r Added " .. name .. " to custom junk list.")
             if OneStorageBag and OneStorageBag.frame and OneStorageBag.frame:IsShown() then
                 OneStorageBag:RefreshLayout()
+            end
+            if OneStorageScrap.optionsFrame and OneStorageScrap.optionsFrame:IsShown() then
+                OneStorageScrap.optionsFrame:RefreshOptions()
             end
         else
             print("|cffff0000[OneStorageScrap]|r Usage: /osscrap add [itemID or ItemLink]")
@@ -183,12 +561,19 @@ SlashCmdList["ONESTORAGESCRAP"] = function(msg)
     elseif cmd == "safe" and arg then
         local itemID = tonumber(arg) or tonumber(arg:match("item:(%d+)"))
         if itemID then
-            db.safeList[itemID] = true
-            db.junkList[itemID] = nil
+            local junkList = OneStorageScrap:GetOption("junkList") or {}
+            local safeList = OneStorageScrap:GetOption("safeList") or {}
+            safeList[itemID] = true
+            junkList[itemID] = nil
+            OneStorageScrap:SetOption("junkList", junkList)
+            OneStorageScrap:SetOption("safeList", safeList)
             local name = GetItemInfo(itemID) or ("Item " .. itemID)
             print("|cff00ccff[OneStorageScrap]|r Added " .. name .. " to protected safe list.")
             if OneStorageBag and OneStorageBag.frame and OneStorageBag.frame:IsShown() then
                 OneStorageBag:RefreshLayout()
+            end
+            if OneStorageScrap.optionsFrame and OneStorageScrap.optionsFrame:IsShown() then
+                OneStorageScrap.optionsFrame:RefreshOptions()
             end
         else
             print("|cffff0000[OneStorageScrap]|r Usage: /osscrap safe [itemID or ItemLink]")
@@ -196,7 +581,11 @@ SlashCmdList["ONESTORAGESCRAP"] = function(msg)
         
     else
         print("|cff00ccff[OneStorageScrap]|r Commands:")
+        print("  /osscrap              - Open graphical options panel")
         print("  /osscrap toggle       - Toggle automatic junk selling")
+        print("  /osscrap greys        - Toggle selling poor (grey) items")
+        print("  /osscrap whites       - Toggle selling common (white) items")
+        print("  /osscrap repair       - Toggle automatic equipment repairs")
         print("  /osscrap add <link>   - Always sell this item as junk")
         print("  /osscrap safe <link>  - Protect this item from ever being sold")
     end

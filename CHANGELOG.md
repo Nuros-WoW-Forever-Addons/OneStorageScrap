@@ -1,0 +1,27 @@
+# Changelog — OneStorageScrap
+
+All notable changes to **OneStorageScrap** are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+---
+
+## [0.0.2] - 2026-10-12
+### Added
+- **Graphical Options Panel (`/osscrap opt`)**: Draggable options window styled with OneSuite metal frame styling (`FrameHelper:ApplySimplePanel`).
+- **Auto-Selling Quality Toggles**: Individual settings for auto-selling poor (grey) items and common (white) items with sell value.
+- **Auto-Repair Configuration**: Checkboxes for toggling auto-repair and prioritizing guild bank funds.
+- **Blizzard Interface Options Registration**: Registered under Game Menu -> Options -> AddOns -> "OneStorage Scrap" with coin icon texture.
+- **Custom Lists Status & Reset**: Shows protected items and custom junk count with 1-click list clearing.
+- **Live Bag Synchronization**: Toggling sell options immediately updates scrap badges across open `OneStorageBag` containers.
+
+---
+
+## [0.0.1] - 2026-10-10
+### Added
+- **Automated Vendor Junk Selling**: Safely batches and sells poor-quality items on `MERCHANT_SHOW`.
+- **Safe & Junk Custom Overrides**: Whitelist and blacklist management via item link or ID (`/osscrap safe`, `/osscrap add`).
+- **Automated Equipment Repair (`AutoRepair`)**: Auto-repairs gear on merchant interaction with optional Guild bank funding (`/osrepair`).
+- **Profit Summary Reporting**: Formatted chat messages reporting total money earned from junk sales.
+- **OneStorageUtils Callback Hook**: Bridges with `ContainerHelper:SetScrapCheckCallback` for suite-wide junk detection.
