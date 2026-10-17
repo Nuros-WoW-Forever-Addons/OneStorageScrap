@@ -136,10 +136,34 @@ local function SetupScrapHook()
                 end
             end
             
-            -- Safety 3: Cannot be a quest item class (classID 12) via instant synchronous check
+            -- Safety 3: Synchronous Item Class checks via C_Item.GetItemInfoInstant
+            -- Disallow Food & Drink, Consumables, Crafting Reagents, Trade Goods, Bags, Recipes, and Quest Items
             if itemID and C_Item and C_Item.GetItemInfoInstant then
                 local ok, _, _, _, _, _, classID = pcall(C_Item.GetItemInfoInstant, itemID)
                 if ok and classID then
+                    -- Consumables (Food, Drink, Potions, Bandages, Elixirs)
+                    if classID == 0 or (Enum and Enum.ItemClass and classID == Enum.ItemClass.Consumable) then
+                        return false
+                    end
+                    -- Crafting Reagents & Trade Goods
+                    if classID == 7 or (Enum and Enum.ItemClass and classID == Enum.ItemClass.Tradegoods) then
+                        return false
+                    end
+                    if classID == 5 or (Enum and Enum.ItemClass and classID == Enum.ItemClass.Reagent) then
+                        return false
+                    end
+                    if classID == 18 or (Enum and Enum.ItemClass and classID == Enum.ItemClass.Profession) then
+                        return false
+                    end
+                    -- Containers / Bags
+                    if classID == 1 or (Enum and Enum.ItemClass and classID == Enum.ItemClass.Container) then
+                        return false
+                    end
+                    -- Recipes (Patterns, Schematics, Recipes)
+                    if classID == 9 or (Enum and Enum.ItemClass and classID == Enum.ItemClass.Recipe) then
+                        return false
+                    end
+                    -- Quest items
                     local questClass = (Enum and Enum.ItemClass and (Enum.ItemClass.Questitem or Enum.ItemClass.QuestItem)) or 12
                     if classID == questClass or classID == 12 then
                         return false
@@ -147,16 +171,29 @@ local function SetupScrapHook()
                 end
             end
             
-            -- Safety 4: If item data is cached by GetItemInfo, verify sellPrice > 0 and not quest/bind
+            -- Safety 4: Cached Item Info Deep Validation via GetItemInfo
             local itemRef = (info and info.link) or itemID
             if itemRef and GetItemInfo then
-                local ok, sellPrice, classID, bindType = pcall(function()
-                    return select(11, GetItemInfo(itemRef)), select(12, GetItemInfo(itemRef)), select(14, GetItemInfo(itemRef))
+                local ok, sellPrice, classID, bindType, isCraftingReagent = pcall(function()
+                    return select(11, GetItemInfo(itemRef)),
+                           select(12, GetItemInfo(itemRef)),
+                           select(14, GetItemInfo(itemRef)),
+                           select(17, GetItemInfo(itemRef))
                 end)
                 if ok then
-                    if classID == 12 or bindType == 4 then
+                    -- Native Blizzard isCraftingReagent flag
+                    if isCraftingReagent == true then
                         return false
                     end
+                    -- Disallow non-sellable classes
+                    if classID == 0 or classID == 1 or classID == 5 or classID == 7 or classID == 9 or classID == 12 or classID == 18 then
+                        return false
+                    end
+                    -- Quest item binding
+                    if bindType == 4 then
+                        return false
+                    end
+                    -- Zero or negative sell price
                     if sellPrice and sellPrice <= 0 then
                         return false
                     end
@@ -351,7 +388,7 @@ function OneStorageScrap:CreateOptionsFrame()
         opt,
         "OneStorageScrapOpt_SellWhites",
         "Auto-Sell Common (White) Items",
-        "Automatically sell common quality (white) items with sell value (excluding quest and safe-listed items).",
+        "Automatically sell common quality (white) items with sell value (excluding food, crafting reagents, quest items, bags, recipes, and safe-listed items).",
         function() return OneStorageScrap:GetOption("sellWhites") end,
         function(val)
             OneStorageScrap:SetOption("sellWhites", val)

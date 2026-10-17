@@ -63,8 +63,9 @@ When picking up development on this addon:
 ## ✅ Recent Completed Work (Latest Spins)
 
 ### Spin 0.0.5
+- **Food & Crafting Reagents Protection**: Strictly protected Common (White) food, drink, potions, elixirs, and bandages (`classID == 0` / `Enum.ItemClass.Consumable`), crafting reagents & trade goods (`classID == 7` / `Enum.ItemClass.Tradegoods`, `classID == 5` / `Enum.ItemClass.Reagent`, `classID == 18` / `Enum.ItemClass.Profession`), native `isCraftingReagent == true` items, unequipped containers (`classID == 1`), and recipes (`classID == 9`) from being auto-sold when `sellWhites` is enabled.
 - **Resolved Lua 0 Truthiness Bug on `questID`**: In WoW Forever Beta / Interface 16001, `C_Container.GetContainerItemQuestInfo` returns `{ isQuestItem = false, questID = 0, isActive = false }`. In Lua, any numeric value—including `0`—is truthy. Checking `questInfo.isQuestItem or questInfo.questID` evaluated to `0` (truthy), falsely flagging 100% of non-quest Common (White) items as quest items and rejecting them from scrap detection. Resolved by strictly checking `type(ret1.questID) == "number" and ret1.questID > 0`.
-- **Select-Based Item Attribute Queries**: Replaced fragile multi-underscore positional unpacking with explicit `select(11, GetItemInfo(...))` (sellPrice), `select(12, ...)` (classID), and `select(14, ...)` (bindType), ensuring robust quest item identification and price checks without argument mismatch risk.
+- **Select-Based Item Attribute Queries**: Replaced fragile multi-underscore positional unpacking with explicit `select(11, GetItemInfo(...))` (sellPrice), `select(12, ...)` (classID), `select(14, ...)` (bindType), and `select(17, ...)` (isCraftingReagent), ensuring robust quest item identification and price checks without argument mismatch risk.
 - **Immediate Callback Initialization**: Registered `SetupScrapHook()` immediately upon file load and prior to bag queue compilation in `SellJunk()`.
 
 ### Spin 0.0.4

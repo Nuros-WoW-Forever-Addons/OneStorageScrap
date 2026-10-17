@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## [0.0.5] - 2026-10-17
+### Added
+- **Food & Consumables Protection**: Common-quality (white) food, drink, potions, elixirs, and bandages (`classID == 0` / `Enum.ItemClass.Consumable`) are strictly protected from being auto-sold when "Auto-Sell Common (White) Items" (`sellWhites`) is enabled.
+- **Crafting Reagents & Trade Goods Protection**: Shielded all trade goods (`classID == 7`), class/spell reagents (`classID == 5`), profession items (`classID == 18`), and items flagged with `isCraftingReagent == true` (return 17 of `GetItemInfo`) from auto-selling.
+- **Bags & Recipes Protection**: Excluded unequipped bags (`classID == 1`) and learned recipes/patterns/schematics (`classID == 9`) from white auto-selling.
 ### Fixed
 - **Lua 0 Truthiness on `questID`**: In WoW Forever / Interface 16001, `C_Container.GetContainerItemQuestInfo` returns `{ isQuestItem = false, questID = 0, isActive = false }`. In Lua, `0` is truthy, causing `questInfo.questID` to evaluate to true and reject all non-quest Common (White) items. Resolved by explicitly requiring `type(ret1.questID) == "number" and ret1.questID > 0`.
 - **Select-Based Item Validation**: Replaced fragile positional return argument unpacking with clean `select` calls for `sellPrice` (11), `classID` (12), and `bindType` (14), ensuring robust quest item and vendor value checks.
