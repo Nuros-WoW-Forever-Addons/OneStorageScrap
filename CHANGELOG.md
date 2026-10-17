@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.0.3] - 2026-10-17
+### Fixed
+- **Common (White) Item Auto-Selling**: Fixed issue where common-quality (white) items failed to be identified as scrap or sold to merchants when "Auto-Sell Common (White) Items" (`sellWhites`) was enabled.
+  - Replaced uncached and brittle `GetItemInfo(itemID)` lookups with multi-level fallbacks using `info.quality`, `C_Item.GetItemQualityByID`, and hyperlink hex colors (`cffffffff`).
+  - Added native `C_Container.GetContainerItemQuestInfo` and synchronous `C_Item.GetItemInfoInstant` checks to safeguard quest items (`classID 12`) from being sold.
+  - Added native `info.hasNoValue` check and explicit Hearthstone protection (`itemID 6948`).
+  - Enhanced `ContainerHelper:IsJunk` to pass the parsed container item info table directly to `scrapCheckCallback`, avoiding redundant bag scans and eliminating silent pcall failures.
+- **TOC Strict Interface Target**: Aligned manifest strictly to WoW Forever Beta (`Interface: 16001`).
+
+---
+
 ## [0.0.2] - 2026-10-12
 ### Added
 - **Graphical Options Panel (`/osscrap opt`)**: Draggable options window styled with OneSuite metal frame styling (`FrameHelper:ApplySimplePanel`).

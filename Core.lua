@@ -45,15 +45,28 @@ end
 -- Custom Scrap Check Hook Registration
 -------------------------------------------------------------------------------
 
+local function GetContainerHelper()
+    if ContainerHelper then return ContainerHelper end
+    if _G.OneStorageUtils and _G.OneStorageUtils.ContainerHelper then
+        ContainerHelper = _G.OneStorageUtils.ContainerHelper
+        return ContainerHelper
+    end
+    return nil
+end
+
 local function SetupScrapHook()
-    if not ContainerHelper or not ContainerHelper.SetScrapCheckCallback then return end
+    local ch = GetContainerHelper()
+    if not ch or not ch.SetScrapCheckCallback then return end
     
-    ContainerHelper:SetScrapCheckCallback(function(bagID, slotID, itemID, quality)
+    ch:SetScrapCheckCallback(function(bagID, slotID, itemID, quality, itemInfo)
         local safeList = OneStorageScrap:GetOption("safeList")
         local junkList = OneStorageScrap:GetOption("junkList")
         
         -- 1. Safe List (Protected: Never sell)
         if itemID and safeList and safeList[itemID] then
+            return false
+        end
+        if itemID == 6948 then -- Hearthstone is always protected
             return false
         end
         
@@ -67,21 +80,74 @@ local function SetupScrapHook()
             return false
         end
         
-        -- 3. Poor Quality (Grey)
-        if OneStorageScrap:GetOption("sellGreys") and quality == 0 then
+        local info = itemInfo
+        if not info and ch.GetItemInfo then
+            info = ch:GetItemInfo(bagID, slotID)
+        end
+        
+        -- Resolve item quality with multi-level fallbacks
+        local itemQuality = quality
+        if itemQuality == nil and info then
+            itemQuality = info.quality
+        end
+        if itemQuality == nil and itemID and C_Item and C_Item.GetItemQualityByID then
+            itemQuality = C_Item.GetItemQualityByID(itemID)
+        end
+        if itemQuality == nil and info and info.link then
+            if info.link:find("cffffffff") then
+                itemQuality = 1
+            elseif info.link:find("cff9d9d9d") then
+                itemQuality = 0
+            end
+        end
+        if itemQuality == nil and itemID and GetItemInfo then
+            itemQuality = select(3, GetItemInfo(itemID))
+        end
+        
+        -- 3. Poor Quality (Grey / Quality 0)
+        if OneStorageScrap:GetOption("sellGreys") and itemQuality == 0 then
+            if info and info.noValue then
+                return false
+            end
             return true
         end
         
-        -- 4. Common Quality (White)
-        if OneStorageScrap:GetOption("sellWhites") and quality == 1 and itemID then
-            local _, _, _, _, _, _, _, _, _, _, sellPrice, classID = GetItemInfo(itemID)
-            -- Safety: must have a vendor sell price, and cannot be a quest item (classID 12)
-            if sellPrice and sellPrice > 0 and classID ~= 12 then
-                local info = ContainerHelper:GetItemInfo(bagID, slotID)
-                if not (info and info.noValue) then
-                    return true
+        -- 4. Common Quality (White / Quality 1)
+        if OneStorageScrap:GetOption("sellWhites") and itemQuality == 1 then
+            -- Safety 1: Must not be unsellable / no value
+            if info and info.noValue then
+                return false
+            end
+            
+            -- Safety 2: Cannot be a quest item (via native C_Container API)
+            if C_Container and C_Container.GetContainerItemQuestInfo then
+                local isQuestItem, questID = C_Container.GetContainerItemQuestInfo(bagID, slotID)
+                if isQuestItem or questID then
+                    return false
                 end
             end
+            
+            -- Safety 3: Cannot be a quest item class (classID 12) via instant synchronous check
+            if itemID and C_Item and C_Item.GetItemInfoInstant then
+                local _, _, _, _, _, classID = C_Item.GetItemInfoInstant(itemID)
+                if classID == 12 or (Enum and Enum.ItemClass and classID == Enum.ItemClass.Questitem) then
+                    return false
+                end
+            end
+            
+            -- Safety 4: If sellPrice is cached by GetItemInfo, verify it is > 0
+            local itemRef = (info and info.link) or itemID
+            if itemRef and GetItemInfo then
+                local _, _, _, _, _, _, _, _, _, _, sellPrice, classID = GetItemInfo(itemRef)
+                if classID == 12 then
+                    return false
+                end
+                if sellPrice and sellPrice <= 0 then
+                    return false
+                end
+            end
+            
+            return true
         end
         
         return false
@@ -96,12 +162,16 @@ function OneStorageScrap:SellJunk()
     if not self:GetOption("autoSell") then return end
     if isSelling then return end
     
+    local ch = GetContainerHelper()
+    if not ch then return end
+    
+    local bagIDs = ch.BAG_IDS or (ch.GetPlayerBagIDs and ch:GetPlayerBagIDs()) or { 0, 1, 2, 3, 4 }
     local queue = {}
-    for _, bagID in ipairs(ContainerHelper.BAG_IDS) do
-        local numSlots = ContainerHelper:GetNumSlots(bagID)
+    for _, bagID in ipairs(bagIDs) do
+        local numSlots = ch:GetNumSlots(bagID)
         for slotID = 1, numSlots do
-            if ContainerHelper:IsJunk(bagID, slotID) then
-                local info = ContainerHelper:GetItemInfo(bagID, slotID)
+            if ch:IsJunk(bagID, slotID) then
+                local info = ch:GetItemInfo(bagID, slotID)
                 if info and not info.locked and not info.noValue then
                     table.insert(queue, { bagID = bagID, slotID = slotID })
                 end
@@ -122,7 +192,7 @@ function OneStorageScrap:SellJunk()
         local endIndex = math.min(index + 11, #queue)
         for i = index, endIndex do
             local item = queue[i]
-            ContainerHelper:UseItem(item.bagID, item.slotID)
+            ch:UseItem(item.bagID, item.slotID)
         end
         
         if endIndex < #queue then
@@ -137,7 +207,7 @@ function OneStorageScrap:SellJunk()
                 local profit = math.max(0, (GetMoney() or 0) - startMoney)
                 if OneStorageScrap:GetOption("printSummary") and itemsSold > 0 and profit > 0 then
                     print(string.format("|cff00ccff[OneStorageScrap]|r Sold %d junk items for %s.",
-                        itemsSold, ContainerHelper:FormatMoney(profit)))
+                        itemsSold, ch:FormatMoney(profit)))
                 end
                 isSelling = false
             end

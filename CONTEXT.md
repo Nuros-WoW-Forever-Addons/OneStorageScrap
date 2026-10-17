@@ -7,7 +7,7 @@
 ## 🎯 Overview & Scope
 
 - **Addon Name**: OneStorageScrap
-- **Current Version**: 0.0.2
+- **Current Version**: 0.0.3
 - **Suite**: Part of the **OneSuite** family (OneStorage Inventory Suite)
 - **GitHub Repository**:
   - Exists: TRUE
@@ -17,7 +17,7 @@
 - **Rollback Target**: Last working `main` branch commit
 - **Release Package**: `.github/workflows/package.yml` generates `OneStorageScrap-latest.zip` on push to `main`
 - **Dependencies**: `OneStorageUtils`, optional `OneStorageBag`
-- **Target WoW Runtimes**: WoW Forever Beta (v1.60.1 / Interface 16001), Vanilla 1.12 (`11200`), TBC 2.4.3 (`20400`), WotLK 3.3.5 (`30300`), Modern WoW (`110000+`)
+- **Target WoW Runtimes**: WoW Forever Beta (v1.60.1 / Interface 16001)
 - **Primary Goal**: Provide safe, throttled auto-selling of vendor junk items with customizable override lists, chat profit reports, and automatic equipment repair with personal or guild funds.
 
 ---
@@ -61,6 +61,14 @@ When picking up development on this addon:
 ---
 
 ## ✅ Recent Completed Work (Latest Spins)
+
+### Spin 0.0.3
+- **Fixed Common (White) Quality Auto-Selling**: Solved issue where Common (White) items were not identified as junk or auto-sold when `sellWhites` was enabled:
+  - Replaced brittle and uncached `GetItemInfo(itemID)` call with multi-tier quality detection (`info.quality`, `C_Item.GetItemQualityByID`, and hyperlink hex string inspection `cffffffff`).
+  - Added native `C_Container.GetContainerItemQuestInfo` and synchronous `C_Item.GetItemInfoInstant` checks to safeguard quest items (`classID 12`) from being sold.
+  - Added native `info.hasNoValue` check and explicit Hearthstone protection (`itemID 6948`).
+  - Enhanced `ContainerHelper:IsJunk` to pass the parsed container item info table directly to `scrapCheckCallback`, avoiding redundant bag scans and eliminating silent pcall failures.
+- **TOC Strict Interface Target**: Aligned manifest strictly to WoW Forever Beta (`Interface: 16001`).
 
 ### Spin 0.0.2
 - Implemented standalone graphical options dialog (`OneStorageScrapOptionsFrame`) styled with `FrameHelper:ApplySimplePanel`.
