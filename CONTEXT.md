@@ -7,7 +7,7 @@
 ## 🎯 Overview & Scope
 
 - **Addon Name**: OneStorageScrap
-- **Current Version**: 0.0.4
+- **Current Version**: 0.0.5
 - **Suite**: Part of the **OneSuite** family (OneStorage Inventory Suite)
 - **GitHub Repository**:
   - Exists: TRUE
@@ -61,6 +61,11 @@ When picking up development on this addon:
 ---
 
 ## ✅ Recent Completed Work (Latest Spins)
+
+### Spin 0.0.5
+- **Resolved Lua 0 Truthiness Bug on `questID`**: In WoW Forever Beta / Interface 16001, `C_Container.GetContainerItemQuestInfo` returns `{ isQuestItem = false, questID = 0, isActive = false }`. In Lua, any numeric value—including `0`—is truthy. Checking `questInfo.isQuestItem or questInfo.questID` evaluated to `0` (truthy), falsely flagging 100% of non-quest Common (White) items as quest items and rejecting them from scrap detection. Resolved by strictly checking `type(ret1.questID) == "number" and ret1.questID > 0`.
+- **Select-Based Item Attribute Queries**: Replaced fragile multi-underscore positional unpacking with explicit `select(11, GetItemInfo(...))` (sellPrice), `select(12, ...)` (classID), and `select(14, ...)` (bindType), ensuring robust quest item identification and price checks without argument mismatch risk.
+- **Immediate Callback Initialization**: Registered `SetupScrapHook()` immediately upon file load and prior to bag queue compilation in `SellJunk()`.
 
 ### Spin 0.0.4
 - **Fixed Quest Info Table Truthiness Bug**: Resolved critical logic bug where `C_Container.GetContainerItemQuestInfo` returning a table (`{ isQuestItem = false, ... }`) evaluated to truthy in Lua, causing non-quest Common (White) items to be falsely flagged as quest items and rejected.

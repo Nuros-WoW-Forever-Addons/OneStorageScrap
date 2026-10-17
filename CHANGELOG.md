@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.0.5] - 2026-10-17
+### Fixed
+- **Lua 0 Truthiness on `questID`**: In WoW Forever / Interface 16001, `C_Container.GetContainerItemQuestInfo` returns `{ isQuestItem = false, questID = 0, isActive = false }`. In Lua, `0` is truthy, causing `questInfo.questID` to evaluate to true and reject all non-quest Common (White) items. Resolved by explicitly requiring `type(ret1.questID) == "number" and ret1.questID > 0`.
+- **Select-Based Item Validation**: Replaced fragile positional return argument unpacking with clean `select` calls for `sellPrice` (11), `classID` (12), and `bindType` (14), ensuring robust quest item and vendor value checks.
+- **Immediate Scrap Callback Hooking**: Hooked `SetupScrapHook()` immediately on load and prior to bag queue compilation in `SellJunk()`.
+
+---
+
 ## [0.0.4] - 2026-10-17
 ### Fixed
 - **Quest Info Table Truthiness Bug**: Resolved critical logic bug where `C_Container.GetContainerItemQuestInfo` returning a table (`{ isQuestItem = false, ... }`) evaluated to truthy in Lua, causing non-quest Common (White) items to be falsely flagged as quest items and rejected.

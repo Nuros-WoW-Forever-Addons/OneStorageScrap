@@ -120,15 +120,17 @@ local function SetupScrapHook()
                 return false
             end
             
-            -- Safety 2: Cannot be a quest item (via native C_Container API table or boolean)
+            -- Safety 2: Cannot be a quest item (via native C_Container API table or multiple returns)
+            -- Note: In modern WoW, GetContainerItemQuestInfo returns a table { isQuestItem = false, questID = 0, isActive = false }
+            -- where questID is 0 for non-quest items. In Lua, 0 is truthy! We must check questID > 0.
             if C_Container and C_Container.GetContainerItemQuestInfo then
-                local ok, questInfo = pcall(C_Container.GetContainerItemQuestInfo, bagID, slotID)
-                if ok and questInfo ~= nil then
-                    if type(questInfo) == "table" then
-                        if questInfo.isQuestItem or questInfo.questID then
+                local ok, ret1, ret2 = pcall(C_Container.GetContainerItemQuestInfo, bagID, slotID)
+                if ok and ret1 ~= nil then
+                    if type(ret1) == "table" then
+                        if ret1.isQuestItem == true or (type(ret1.questID) == "number" and ret1.questID > 0) then
                             return false
                         end
-                    elseif questInfo == true then
+                    elseif ret1 == true or ret1 == 1 or (type(ret2) == "number" and ret2 > 0) then
                         return false
                     end
                 end
@@ -137,17 +139,22 @@ local function SetupScrapHook()
             -- Safety 3: Cannot be a quest item class (classID 12) via instant synchronous check
             if itemID and C_Item and C_Item.GetItemInfoInstant then
                 local ok, _, _, _, _, _, classID = pcall(C_Item.GetItemInfoInstant, itemID)
-                if ok and (classID == 12 or (Enum and Enum.ItemClass and classID == Enum.ItemClass.Questitem)) then
-                    return false
+                if ok and classID then
+                    local questClass = (Enum and Enum.ItemClass and (Enum.ItemClass.Questitem or Enum.ItemClass.QuestItem)) or 12
+                    if classID == questClass or classID == 12 then
+                        return false
+                    end
                 end
             end
             
-            -- Safety 4: If sellPrice is cached by GetItemInfo, verify it is > 0
+            -- Safety 4: If item data is cached by GetItemInfo, verify sellPrice > 0 and not quest/bind
             local itemRef = (info and info.link) or itemID
             if itemRef and GetItemInfo then
-                local ok, _, _, _, _, _, _, _, _, _, _, sellPrice, classID = pcall(GetItemInfo, itemRef)
+                local ok, sellPrice, classID, bindType = pcall(function()
+                    return select(11, GetItemInfo(itemRef)), select(12, GetItemInfo(itemRef)), select(14, GetItemInfo(itemRef))
+                end)
                 if ok then
-                    if classID == 12 then
+                    if classID == 12 or bindType == 4 then
                         return false
                     end
                     if sellPrice and sellPrice <= 0 then
@@ -163,6 +170,9 @@ local function SetupScrapHook()
     end)
 end
 
+-- Immediately register scrap callback if ContainerHelper is available
+SetupScrapHook()
+
 -------------------------------------------------------------------------------
 -- Safe Batch Selling Engine
 -------------------------------------------------------------------------------
@@ -171,6 +181,7 @@ function OneStorageScrap:SellJunk()
     if not self:GetOption("autoSell") then return end
     if isSelling then return end
     
+    SetupScrapHook()
     local ch = GetContainerHelper()
     if not ch then return end
     
