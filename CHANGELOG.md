@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.0.5] - 2026-10-17
 ### Added
+- **Profession Tools & Fishing Pole Protection**: Added dedicated shields preventing the auto-selling of tools and items used in professions:
+  - Weapon subclass 20 (`Enum.ItemWeaponSubclass.Fishingpole`) strictly shields all fishing poles.
+  - Added `PROFESSION_TOOL_ITEM_IDS` database guarding classic and expansion profession tools (Mining Picks, Skinning Knives, Blacksmith Hammers, Arclight Spanners, Gyromatic Micro-Adjustors, Gnomish Army Knives, Jeweler Kits, Virtuoso Inking Sets, Runed Enchanting Rods, Philosopher's Stones, Flint and Tinder).
+  - Integrated `C_TooltipInfo` deep line scanning for `"fishing pole"`, `"tool:"`, and profession skill requirement lines (`"requires fishing"`, `"requires mining"`, etc.).
 - **Food & Consumables Protection**: Common-quality (white) food, drink, potions, elixirs, and bandages (`classID == 0` / `Enum.ItemClass.Consumable`) are strictly protected from being auto-sold when "Auto-Sell Common (White) Items" (`sellWhites`) is enabled.
 - **Crafting Reagents & Trade Goods Protection**: Shielded all trade goods (`classID == 7`), class/spell reagents (`classID == 5`), profession items (`classID == 18`), and items flagged with `isCraftingReagent == true` (return 17 of `GetItemInfo`) from auto-selling.
 - **Bags & Recipes Protection**: Excluded unequipped bags (`classID == 1`) and learned recipes/patterns/schematics (`classID == 9`) from white auto-selling.

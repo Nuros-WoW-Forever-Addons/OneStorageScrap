@@ -54,6 +54,128 @@ local function GetContainerHelper()
     return nil
 end
 
+-------------------------------------------------------------------------------
+-- Profession Tools & Equipment Shield
+-------------------------------------------------------------------------------
+
+local PROFESSION_TOOL_ITEM_IDS = {
+    -- Fishing Poles
+    [6256] = true,   -- Fishing Pole
+    [6365] = true,   -- Strong Fishing Pole
+    [6366] = true,   -- Darkwood Fishing Pole
+    [6367] = true,   -- Big Iron Fishing Pole
+    [12225] = true,  -- Blump Family Fishing Pole
+    [19022] = true,  -- Nat Pagle's Extreme Angler FC-5000
+    [19970] = true,  -- Arcanite Fishing Pole
+    [25924] = true,  -- Mastercraft Kalu'ak Fishing Pole
+    [44050] = true,  -- Mastercraft Kalu'ak Fishing Pole
+    [45858] = true,  -- Nat's Lucky Fishing Pole
+    [45991] = true,  -- Bone Fishing Pole
+    [45992] = true,  -- Jeweled Fishing Pole
+    [84661] = true,  -- Dragon Fishing Pole
+    [116825] = true, -- Savage Fishing Pole
+    [116826] = true, -- Draenic Fishing Pole
+    [133755] = true, -- Underlight Angler
+    
+    -- Mining Picks
+    [2901] = true,   -- Mining Pick
+    [1819] = true,   -- Gnomish Universal Remote
+    [19593] = true,  -- Dark Iron Mining Pick
+    [104192] = true, -- Cobalt Mining Pick
+    
+    -- Skinning Knives
+    [7005] = true,   -- Skinning Knife
+    [7006] = true,   -- Skinning Knife
+    [12709] = true,  -- Finkle's Skinner
+    [19901] = true,  -- Zulian Slicer
+    
+    -- Blacksmith Hammers
+    [5956] = true,   -- Blacksmith Hammer
+    [19592] = true,  -- Dark Iron Blacksmithing Hammer
+    
+    -- Engineering Tools
+    [6219] = true,   -- Arclight Spanner
+    [18256] = true,  -- Gyromatic Micro-Adjustor
+    [40768] = true,  -- Gnomish Army Knife
+    [54440] = true,  -- Gnomish Army Knife
+    
+    -- Jewelcrafting & Inscription & Cooking
+    [20815] = true,  -- Jeweler's Kit
+    [20824] = true,  -- Simple Grinder
+    [39501] = true,  -- Virtuoso Inking Set
+    [4470] = true,   -- Simple Wood
+    [4471] = true,   -- Flint and Tinder
+    [16084] = true,  -- Cooking Pot
+    
+    -- Enchanting Rods (Runed Rods)
+    [6218] = true,   -- Runed Copper Rod
+    [6339] = true,   -- Runed Silver Rod
+    [11130] = true,  -- Runed Golden Rod
+    [11145] = true,  -- Runed Truesilver Rod
+    [16207] = true,  -- Runed Arcanite Rod
+    [22461] = true,  -- Runed Fel Iron Rod
+    [22462] = true,  -- Runed Adamantite Rod
+    [22463] = true,  -- Runed Eternium Rod
+    [44452] = true,  -- Runed Titanium Rod
+    
+    -- Alchemy
+    [9149] = true,   -- Philosopher's Stone
+    [13503] = true,  -- Alchemist Stone
+}
+
+local function IsProfessionTool(bagID, slotID, itemID, classID, subclassID, equipLoc)
+    -- 1. Fishing Poles (Class 2 = Weapon, Subclass 20 = Fishingpole)
+    if classID == 2 and (subclassID == 20 or (Enum and Enum.ItemWeaponSubclass and subclassID == Enum.ItemWeaponSubclass.Fishingpole)) then
+        return true
+    end
+    
+    -- 2. Profession Class (18) or Profession Tool Equipment Slots
+    if classID == 18 or (Enum and Enum.ItemClass and classID == Enum.ItemClass.Profession) then
+        return true
+    end
+    if equipLoc == "INVTYPE_PROFESSION_TOOL" or equipLoc == "INVTYPE_PROFESSION_GEAR" then
+        return true
+    end
+    
+    -- 3. Predefined Known Profession Tool Item IDs
+    if itemID and PROFESSION_TOOL_ITEM_IDS[itemID] then
+        return true
+    end
+    
+    -- 4. Deep Tooltip Keyword Scan
+    if C_TooltipInfo and C_TooltipInfo.GetBagItem and bagID and slotID then
+        local ok, data = pcall(C_TooltipInfo.GetBagItem, bagID, slotID)
+        if ok and data and data.lines then
+            for _, line in ipairs(data.lines) do
+                local text = line.leftText
+                if text and type(text) == "string" then
+                    local lower = text:lower()
+                    if lower:find("fishing pole", 1, true)
+                        or lower:find("tool:", 1, true)
+                        or lower:find("requires fishing", 1, true)
+                        or lower:find("requires mining", 1, true)
+                        or lower:find("requires skinning", 1, true)
+                        or lower:find("requires herbalism", 1, true)
+                        or lower:find("requires blacksmithing", 1, true)
+                        or lower:find("requires engineering", 1, true)
+                        or lower:find("requires alchemy", 1, true)
+                        or lower:find("requires cooking", 1, true)
+                        or lower:find("requires enchanting", 1, true)
+                        or lower:find("requires jewelcrafting", 1, true)
+                        or lower:find("requires inscription", 1, true)
+                        or lower:find("increases fishing", 1, true)
+                        or lower:find("fishing lure", 1, true)
+                    then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
 local function SetupScrapHook()
     local ch = GetContainerHelper()
     if not ch or not ch.SetScrapCheckCallback then return end
@@ -137,10 +259,17 @@ local function SetupScrapHook()
             end
             
             -- Safety 3: Synchronous Item Class checks via C_Item.GetItemInfoInstant
-            -- Disallow Food & Drink, Consumables, Crafting Reagents, Trade Goods, Bags, Recipes, and Quest Items
+            -- Disallow Profession Tools, Fishing Poles, Food, Consumables, Reagents, Trade Goods, Bags, Recipes, and Quest Items
             if itemID and C_Item and C_Item.GetItemInfoInstant then
-                local ok, _, _, _, _, _, classID = pcall(C_Item.GetItemInfoInstant, itemID)
+                local ok, eqLoc, classID, subclassID = pcall(function(id)
+                    local _, _, _, e, _, c, s = C_Item.GetItemInfoInstant(id)
+                    return e, c, s
+                end, itemID)
                 if ok and classID then
+                    -- Profession Tools & Fishing Poles
+                    if IsProfessionTool(bagID, slotID, itemID, classID, subclassID, eqLoc) then
+                        return false
+                    end
                     -- Consumables (Food, Drink, Potions, Bandages, Elixirs)
                     if classID == 0 or (Enum and Enum.ItemClass and classID == Enum.ItemClass.Consumable) then
                         return false
@@ -174,13 +303,19 @@ local function SetupScrapHook()
             -- Safety 4: Cached Item Info Deep Validation via GetItemInfo
             local itemRef = (info and info.link) or itemID
             if itemRef and GetItemInfo then
-                local ok, sellPrice, classID, bindType, isCraftingReagent = pcall(function()
+                local ok, sellPrice, classID, subclassID, bindType, isCraftingReagent, eqLoc = pcall(function()
                     return select(11, GetItemInfo(itemRef)),
                            select(12, GetItemInfo(itemRef)),
+                           select(13, GetItemInfo(itemRef)),
                            select(14, GetItemInfo(itemRef)),
-                           select(17, GetItemInfo(itemRef))
+                           select(17, GetItemInfo(itemRef)),
+                           select(9, GetItemInfo(itemRef))
                 end)
                 if ok then
+                    -- Profession Tools & Fishing Poles check
+                    if IsProfessionTool(bagID, slotID, itemID, classID, subclassID, eqLoc) then
+                        return false
+                    end
                     -- Native Blizzard isCraftingReagent flag
                     if isCraftingReagent == true then
                         return false
@@ -388,7 +523,7 @@ function OneStorageScrap:CreateOptionsFrame()
         opt,
         "OneStorageScrapOpt_SellWhites",
         "Auto-Sell Common (White) Items",
-        "Automatically sell common quality (white) items with sell value (excluding food, crafting reagents, quest items, bags, recipes, and safe-listed items).",
+        "Automatically sell common quality (white) items with sell value (excluding profession tools like fishing poles, food, crafting reagents, quest items, bags, recipes, and safe-listed items).",
         function() return OneStorageScrap:GetOption("sellWhites") end,
         function(val)
             OneStorageScrap:SetOption("sellWhites", val)
