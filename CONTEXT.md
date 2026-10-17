@@ -7,7 +7,7 @@
 ## 🎯 Overview & Scope
 
 - **Addon Name**: OneStorageScrap
-- **Current Version**: 0.0.3
+- **Current Version**: 0.0.4
 - **Suite**: Part of the **OneSuite** family (OneStorage Inventory Suite)
 - **GitHub Repository**:
   - Exists: TRUE
@@ -61,6 +61,11 @@ When picking up development on this addon:
 ---
 
 ## ✅ Recent Completed Work (Latest Spins)
+
+### Spin 0.0.4
+- **Fixed Quest Info Table Truthiness Bug**: Resolved critical logic bug where `C_Container.GetContainerItemQuestInfo` returning a table (`{ isQuestItem = false, ... }`) evaluated to truthy in Lua, causing non-quest Common (White) items to be falsely flagged as quest items and rejected.
+- **Table & Boolean Quest Evaluation**: Explicitly inspects `questInfo.isQuestItem` and `questInfo.questID` when a table is returned, ensuring non-quest white items are properly identified as junk when `sellWhites` is enabled.
+- **Protected Pcall Item Queries**: Guarded `C_Item.GetItemInfoInstant` and `GetItemInfo` queries with `pcall` and case-insensitive hex color inspection (`cffffffff`).
 
 ### Spin 0.0.3
 - **Fixed Common (White) Quality Auto-Selling**: Solved issue where Common (White) items were not identified as junk or auto-sold when `sellWhites` was enabled:

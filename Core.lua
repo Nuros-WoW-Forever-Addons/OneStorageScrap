@@ -93,10 +93,11 @@ local function SetupScrapHook()
         if itemQuality == nil and itemID and C_Item and C_Item.GetItemQualityByID then
             itemQuality = C_Item.GetItemQualityByID(itemID)
         end
-        if itemQuality == nil and info and info.link then
-            if info.link:find("cffffffff") then
+        if itemQuality == nil and info and info.link and type(info.link) == "string" then
+            local lowerLink = info.link:lower()
+            if lowerLink:find("cffffffff", 1, true) then
                 itemQuality = 1
-            elseif info.link:find("cff9d9d9d") then
+            elseif lowerLink:find("cff9d9d9d", 1, true) then
                 itemQuality = 0
             end
         end
@@ -119,18 +120,24 @@ local function SetupScrapHook()
                 return false
             end
             
-            -- Safety 2: Cannot be a quest item (via native C_Container API)
+            -- Safety 2: Cannot be a quest item (via native C_Container API table or boolean)
             if C_Container and C_Container.GetContainerItemQuestInfo then
-                local isQuestItem, questID = C_Container.GetContainerItemQuestInfo(bagID, slotID)
-                if isQuestItem or questID then
-                    return false
+                local ok, questInfo = pcall(C_Container.GetContainerItemQuestInfo, bagID, slotID)
+                if ok and questInfo ~= nil then
+                    if type(questInfo) == "table" then
+                        if questInfo.isQuestItem or questInfo.questID then
+                            return false
+                        end
+                    elseif questInfo == true then
+                        return false
+                    end
                 end
             end
             
             -- Safety 3: Cannot be a quest item class (classID 12) via instant synchronous check
             if itemID and C_Item and C_Item.GetItemInfoInstant then
-                local _, _, _, _, _, classID = C_Item.GetItemInfoInstant(itemID)
-                if classID == 12 or (Enum and Enum.ItemClass and classID == Enum.ItemClass.Questitem) then
+                local ok, _, _, _, _, _, classID = pcall(C_Item.GetItemInfoInstant, itemID)
+                if ok and (classID == 12 or (Enum and Enum.ItemClass and classID == Enum.ItemClass.Questitem)) then
                     return false
                 end
             end
@@ -138,12 +145,14 @@ local function SetupScrapHook()
             -- Safety 4: If sellPrice is cached by GetItemInfo, verify it is > 0
             local itemRef = (info and info.link) or itemID
             if itemRef and GetItemInfo then
-                local _, _, _, _, _, _, _, _, _, _, sellPrice, classID = GetItemInfo(itemRef)
-                if classID == 12 then
-                    return false
-                end
-                if sellPrice and sellPrice <= 0 then
-                    return false
+                local ok, _, _, _, _, _, _, _, _, _, _, sellPrice, classID = pcall(GetItemInfo, itemRef)
+                if ok then
+                    if classID == 12 then
+                        return false
+                    end
+                    if sellPrice and sellPrice <= 0 then
+                        return false
+                    end
                 end
             end
             

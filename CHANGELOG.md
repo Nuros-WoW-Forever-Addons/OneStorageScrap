@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.0.4] - 2026-10-17
+### Fixed
+- **Quest Info Table Truthiness Bug**: Resolved critical logic bug where `C_Container.GetContainerItemQuestInfo` returning a table (`{ isQuestItem = false, ... }`) evaluated to truthy in Lua, causing non-quest Common (White) items to be falsely flagged as quest items and rejected.
+- **Table & Boolean Quest Evaluation**: Explicitly inspects `questInfo.isQuestItem` and `questInfo.questID` when a table is returned, ensuring non-quest white items are properly identified as junk when `sellWhites` is enabled.
+- **Protected Pcall Item Queries**: Guarded `C_Item.GetItemInfoInstant` and `GetItemInfo` queries with `pcall` and case-insensitive hex color inspection (`cffffffff`).
+
+---
+
 ## [0.0.3] - 2026-10-17
 ### Fixed
 - **Common (White) Item Auto-Selling**: Fixed issue where common-quality (white) items failed to be identified as scrap or sold to merchants when "Auto-Sell Common (White) Items" (`sellWhites`) was enabled.
