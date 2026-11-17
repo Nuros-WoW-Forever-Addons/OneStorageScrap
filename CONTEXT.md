@@ -7,7 +7,7 @@
 ## 🎯 Overview & Scope
 
 - **Addon Name**: OneStorageScrap
-- **Current Version**: 0.0.5
+- **Current Version**: 0.0.7
 - **Suite**: Part of the **OneSuite** family (OneStorage Inventory Suite)
 - **GitHub Repository**:
   - Exists: TRUE
@@ -51,7 +51,7 @@ OneStorageScrapDB = {
 When picking up development on this addon:
 
 1. **Orientation**: Read `CONTEXT.md` (this file) to verify current state, known issues, and active backlog items.
-2. **Implementation**: Execute changes. For code refactoring or boilerplate, delegate to `qwen2.5-coder:32b` via the local `gx10_ollama` MCP server as mandated by user rules.
+2. **Implementation**: Execute changes. For bounded code generation, refactoring, or review, delegate to NVIDIA Nemotron 3 Super 120B via the `nemotron` MCP server as mandated by user rules.
 3. **Verification**: Verify in-game syntax and test using `/osscrap` and `/osrepair`.
 4. **Handoff Update**:
    - Move completed tasks from **Upcoming Backlog** to **Recent Completed Work**.
@@ -61,6 +61,16 @@ When picking up development on this addon:
 ---
 
 ## ✅ Recent Completed Work (Latest Spins)
+
+### Spin 0.0.7
+- **Spell & Ability Reagent Protection**: Built a comprehensive filtering system ensuring spell/ability reagents (such as Maple Seeds, Ankhs, Sacred Candles, Flash Powder, and Teleportation Runes) are never classified as scrap junk or auto-sold when `sellWhites` is enabled:
+  - Added `SPELL_REAGENT_ITEM_IDS` database covering Druid seeds/berries, Priest candles, Mage runes/powders/feathers, Warlock soul shards/stones/figurines, Paladin symbols, Rogue powders/vials, Shaman ankhs/oils/scales, and DK corpse dust.
+  - Added `IsSpellReagent` checking item IDs, classID 5 (`Reagent`), and `C_TooltipInfo` line scanning for `"reagent"` and requirement lines.
+  - Shielded non-junk Miscellaneous items (`classID == 15` and `subclassID ~= 0`), ensuring companion pets, holiday items, and mounts cannot be sold as white scrap.
+  - Refactored Safety 4 item validation into structured table unpacking.
+
+### Spin 0.0.6
+- **Safe Item Info Resolution (`GetItemInfoSafe`)**: Replaced all direct `GetItemInfo` calls with `GetItemInfoSafe` (falling back safely between `C_Item.GetItemInfo` and `_G.GetItemInfo`) in scrap item quality evaluations, Safety 4 deep validation queries, and custom safe/junk list chat feedback, preventing `attempt to call a nil value` crashes on WoW Forever Beta (Interface 16001).
 
 ### Spin 0.0.5
 - **Profession Tools & Fishing Pole Protection**: Added comprehensive shields preventing the auto-selling of items used in professions when `sellWhites` is enabled:

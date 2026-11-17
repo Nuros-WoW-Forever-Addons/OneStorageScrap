@@ -5,6 +5,28 @@ All notable changes to **OneStorageScrap** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.7] - 2026-10-17
+### Added
+- **Spell & Ability Reagent Protection**: Added dedicated filter shielding class spell/ability reagents from being auto-sold when "Auto-Sell Common (White) Items" (`sellWhites`) is enabled:
+  - Added `SPELL_REAGENT_ITEM_IDS` database guarding classic spell reagents across classes:
+    - **Druid**: Maple Seed, Stranglethorn Seed, Ashwood Seed, Ironwood Seed, Hornbeam Seed, Wild Thornroot, Wild Berries.
+    - **Priest**: Sacred Candle, Holy Candle.
+    - **Mage**: Rune of Teleportation, Rune of Portals, Arcane Powder, Light Feather.
+    - **Warlock**: Soul Shard, Soulstone, Healthstone, Firestone, Spellstone, Demonic Figurine.
+    - **Paladin**: Symbol of Divinity, Symbol of Kings.
+    - **Rogue**: Flash Powder, Blinding Powder, Thieves' Tools.
+    - **Shaman**: Ankh, Shiny Fish Scales, Fish Oil.
+    - **Death Knight**: Corpse Dust.
+  - Added `IsSpellReagent` evaluating item IDs, classID 5 (`Reagent`), classID 15 (`Miscellaneous`) with non-junk subclasses, and `C_TooltipInfo` deep line scanning for `"reagent"` and requirement lines.
+  - Added miscellaneous non-junk subclass protection (`classID == 15` and `subclassID ~= 0`), shielding companion pets, holiday items, and mounts from being sold.
+  - Refactored Safety 4 in `SetupScrapHook` into clean table-based attribute unpacking.
+
+---
+
+## [0.0.6] - 2026-10-17
+### Fixed
+- **Safe Item Info Resolution (`GetItemInfoSafe`)**: Replaced all direct `GetItemInfo` calls with `GetItemInfoSafe` (falling back safely between `C_Item.GetItemInfo` and `_G.GetItemInfo`) in scrap item quality evaluations, Safety 4 deep validation queries, and custom safe/junk list chat feedback, preventing `attempt to call a nil value` crashes on WoW Forever Beta (Interface 16001).
+
 ---
 
 ## [0.0.5] - 2026-10-17

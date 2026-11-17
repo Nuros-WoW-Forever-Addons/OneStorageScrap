@@ -13,6 +13,16 @@ local Utils = _G.OneStorageUtils
 local ContainerHelper = Utils and Utils.ContainerHelper
 local FrameHelper = Utils and Utils.FrameHelper
 
+local function GetItemInfoSafe(itemRef)
+    if not itemRef then return nil end
+    if C_Item and C_Item.GetItemInfo then
+        return C_Item.GetItemInfo(itemRef)
+    elseif _G.GetItemInfo then
+        return _G.GetItemInfo(itemRef)
+    end
+    return nil
+end
+
 local isSelling = false
 local itemsSold = 0
 local startMoney = 0
@@ -123,6 +133,103 @@ local PROFESSION_TOOL_ITEM_IDS = {
     [13503] = true,  -- Alchemist Stone
 }
 
+local SPELL_REAGENT_ITEM_IDS = {
+    -- Druid Rebirth Seeds & Buff Reagents
+    [17034] = true,  -- Maple Seed (Rebirth)
+    [17035] = true,  -- Stranglethorn Seed (Rebirth)
+    [17036] = true,  -- Ashwood Seed (Rebirth)
+    [17037] = true,  -- Hornbeam Seed (Rebirth)
+    [17038] = true,  -- Ironwood Seed (Rebirth)
+    [44614] = true,  -- Starleaf Seed (Rebirth)
+    [17021] = true,  -- Wild Berries (Gift of the Wild)
+    [17026] = true,  -- Wild Thornroot (Gift of the Wild)
+    [44605] = true,  -- Wild Spineleaf (Gift of the Wild)
+    
+    -- Priest Candles
+    [17028] = true,  -- Sacred Candle (Prayer of Fortitude)
+    [17029] = true,  -- Candle of Holy Light (Prayer of Fortitude / Spirit)
+    [44615] = true,  -- Devout Candle (Prayer of Fortitude / Spirit)
+    
+    -- Mage Runes, Powders & Feathers
+    [17031] = true,  -- Rune of Teleportation
+    [17032] = true,  -- Rune of Portals
+    [17020] = true,  -- Arcane Powder (Arcane Brilliance)
+    [17056] = true,  -- Light Feather (Slow Fall)
+    
+    -- Warlock Shards, Stones & Figurines
+    [6265]  = true,  -- Soul Shard
+    [16583] = true,  -- Demonic Figurine (Doomguard)
+    [5565]  = true,  -- Infernal Stone (Infernal)
+    
+    -- Paladin Symbols
+    [17033] = true,  -- Symbol of Divinity (Divine Intervention)
+    [21177] = true,  -- Symbol of Kings (Greater Blessings)
+    
+    -- Rogue Powders, Vials & Poisons
+    [5140]  = true,  -- Flash Powder (Vanish)
+    [5530]  = true,  -- Blinding Powder (Blind)
+    [5060]  = true,  -- Thieves' Tools
+    [2928]  = true,  -- Dust of Deterioration
+    [2930]  = true,  -- Essence of Pain
+    [2931]  = true,  -- Deathweed
+    [8925]  = true,  -- Crystal Vial
+    [8923]  = true,  -- Leaded Vial
+    [8924]  = true,  -- Empty Vial
+    
+    -- Shaman Ankhs, Oil & Scales
+    [17030] = true,  -- Ankh (Reincarnation)
+    [17057] = true,  -- Fish Oil (Water Walking)
+    [17058] = true,  -- Shiny Fish Scales (Water Breathing)
+    
+    -- Death Knight Corpse Dust
+    [37201] = true,  -- Corpse Dust (Raise Dead)
+}
+
+local function IsSpellReagent(bagID, slotID, itemID, classID, subclassID)
+    -- 1. Known Predefined Spell / Ability Reagent Database
+    if itemID and SPELL_REAGENT_ITEM_IDS[itemID] then
+        return true
+    end
+    
+    -- 2. Class 5 (Reagents)
+    if classID == 5 or (Enum and Enum.ItemClass and classID == Enum.ItemClass.Reagent) then
+        return true
+    end
+    
+    -- 3. Class 15 (Miscellaneous) with Subclass 1 (Reagent) or non-junk subclasses
+    if classID == 15 or (Enum and Enum.ItemClass and classID == Enum.ItemClass.Miscellaneous) then
+        local junkSubclass = (Enum and Enum.ItemMiscellaneousSubclass and Enum.ItemMiscellaneousSubclass.Junk) or 0
+        if subclassID and subclassID ~= junkSubclass then
+            return true
+        end
+    end
+    
+    -- 4. Deep Tooltip Keyword Scan
+    if C_TooltipInfo and C_TooltipInfo.GetBagItem and bagID and slotID then
+        local ok, data = pcall(C_TooltipInfo.GetBagItem, bagID, slotID)
+        if ok and data and data.lines then
+            for _, line in ipairs(data.lines) do
+                local text = line.leftText
+                if text and type(text) == "string" then
+                    local lower = text:lower()
+                    if lower == "reagent"
+                        or lower:find("^reagent")
+                        or lower:find("reagent$")
+                        or lower:find("required for ", 1, true)
+                        or lower:find("requires rebirth", 1, true)
+                        or lower:find("requires teleport", 1, true)
+                        or lower:find("requires portal", 1, true)
+                    then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
 local function IsProfessionTool(bagID, slotID, itemID, classID, subclassID, equipLoc)
     -- 1. Fishing Poles (Class 2 = Weapon, Subclass 20 = Fishingpole)
     if classID == 2 and (subclassID == 20 or (Enum and Enum.ItemWeaponSubclass and subclassID == Enum.ItemWeaponSubclass.Fishingpole)) then
@@ -223,8 +330,8 @@ local function SetupScrapHook()
                 itemQuality = 0
             end
         end
-        if itemQuality == nil and itemID and GetItemInfo then
-            itemQuality = select(3, GetItemInfo(itemID))
+        if itemQuality == nil and itemID and GetItemInfoSafe then
+            itemQuality = select(3, GetItemInfoSafe(itemID))
         end
         
         -- 3. Poor Quality (Grey / Quality 0)
@@ -239,6 +346,11 @@ local function SetupScrapHook()
         if OneStorageScrap:GetOption("sellWhites") and itemQuality == 1 then
             -- Safety 1: Must not be unsellable / no value
             if info and info.noValue then
+                return false
+            end
+            
+            -- Immediate check: Known spell/ability reagents are never junk
+            if itemID and SPELL_REAGENT_ITEM_IDS[itemID] then
                 return false
             end
             
@@ -259,7 +371,7 @@ local function SetupScrapHook()
             end
             
             -- Safety 3: Synchronous Item Class checks via C_Item.GetItemInfoInstant
-            -- Disallow Profession Tools, Fishing Poles, Food, Consumables, Reagents, Trade Goods, Bags, Recipes, and Quest Items
+            -- Disallow Profession Tools, Fishing Poles, Spell Reagents, Food, Consumables, Reagents, Trade Goods, Bags, Recipes, Quest Items, and Misc Non-Junk
             if itemID and C_Item and C_Item.GetItemInfoInstant then
                 local ok, eqLoc, classID, subclassID = pcall(function(id)
                     local _, _, _, e, _, c, s = C_Item.GetItemInfoInstant(id)
@@ -268,6 +380,10 @@ local function SetupScrapHook()
                 if ok and classID then
                     -- Profession Tools & Fishing Poles
                     if IsProfessionTool(bagID, slotID, itemID, classID, subclassID, eqLoc) then
+                        return false
+                    end
+                    -- Spell / Ability Reagents (Maple Seeds, Ankhs, Candles, Runes, etc.)
+                    if IsSpellReagent(bagID, slotID, itemID, classID, subclassID) then
                         return false
                     end
                     -- Consumables (Food, Drink, Potions, Bandages, Elixirs)
@@ -283,6 +399,13 @@ local function SetupScrapHook()
                     end
                     if classID == 18 or (Enum and Enum.ItemClass and classID == Enum.ItemClass.Profession) then
                         return false
+                    end
+                    -- Miscellaneous (Class 15) non-junk subclasses (Reagents, Companion Pets, Holiday, Mounts, etc.)
+                    if classID == 15 or (Enum and Enum.ItemClass and classID == Enum.ItemClass.Miscellaneous) then
+                        local junkSubclass = (Enum and Enum.ItemMiscellaneousSubclass and Enum.ItemMiscellaneousSubclass.Junk) or 0
+                        if subclassID and subclassID ~= junkSubclass then
+                            return false
+                        end
                     end
                     -- Containers / Bags
                     if classID == 1 or (Enum and Enum.ItemClass and classID == Enum.ItemClass.Container) then
@@ -300,36 +423,50 @@ local function SetupScrapHook()
                 end
             end
             
-            -- Safety 4: Cached Item Info Deep Validation via GetItemInfo
+            -- Safety 4: Cached Item Info Deep Validation via GetItemInfoSafe
             local itemRef = (info and info.link) or itemID
-            if itemRef and GetItemInfo then
-                local ok, sellPrice, classID, subclassID, bindType, isCraftingReagent, eqLoc = pcall(function()
-                    return select(11, GetItemInfo(itemRef)),
-                           select(12, GetItemInfo(itemRef)),
-                           select(13, GetItemInfo(itemRef)),
-                           select(14, GetItemInfo(itemRef)),
-                           select(17, GetItemInfo(itemRef)),
-                           select(9, GetItemInfo(itemRef))
+            if itemRef and GetItemInfoSafe then
+                local ok, itemData = pcall(function()
+                    local itemName, itemLink, itemQuality, itemLevel, itemMinLevel, itemType, itemSubType,
+                          itemStackCount, itemEquipLoc, itemTexture, sellPrice, classID, subclassID,
+                          bindType, expacID, setID, isCraftingReagent = GetItemInfoSafe(itemRef)
+                    return {
+                        sellPrice = sellPrice,
+                        classID = classID,
+                        subclassID = subclassID,
+                        bindType = bindType,
+                        isCraftingReagent = isCraftingReagent,
+                        equipLoc = itemEquipLoc,
+                    }
                 end)
-                if ok then
+                if ok and type(itemData) == "table" then
                     -- Profession Tools & Fishing Poles check
-                    if IsProfessionTool(bagID, slotID, itemID, classID, subclassID, eqLoc) then
+                    if IsProfessionTool(bagID, slotID, itemID, itemData.classID, itemData.subclassID, itemData.equipLoc) then
+                        return false
+                    end
+                    -- Spell / Ability Reagents check
+                    if IsSpellReagent(bagID, slotID, itemID, itemData.classID, itemData.subclassID) then
                         return false
                     end
                     -- Native Blizzard isCraftingReagent flag
-                    if isCraftingReagent == true then
+                    if itemData.isCraftingReagent == true then
+                        return false
+                    end
+                    -- Miscellaneous non-junk subclasses (Reagents, Companion Pets, Holiday, Mounts)
+                    if itemData.classID == 15 and itemData.subclassID and itemData.subclassID ~= 0 then
                         return false
                     end
                     -- Disallow non-sellable classes
-                    if classID == 0 or classID == 1 or classID == 5 or classID == 7 or classID == 9 or classID == 12 or classID == 18 then
+                    local c = itemData.classID
+                    if c == 0 or c == 1 or c == 5 or c == 7 or c == 9 or c == 12 or c == 18 then
                         return false
                     end
                     -- Quest item binding
-                    if bindType == 4 then
+                    if itemData.bindType == 4 then
                         return false
                     end
                     -- Zero or negative sell price
-                    if sellPrice and sellPrice <= 0 then
+                    if itemData.sellPrice and itemData.sellPrice <= 0 then
                         return false
                     end
                 end
@@ -469,6 +606,14 @@ function OneStorageScrap:CreateOptionsFrame()
     opt:SetScript("OnDragStop", function(s)
         s:StopMovingOrSizing()
         OneStorageScrap:SaveOptionsPosition()
+        if OneStorageBag then
+            OneStorageBag.isScrapDocked = false
+        end
+    end)
+    opt:HookScript("OnHide", function()
+        if OneStorageBag then
+            OneStorageBag.isScrapDocked = false
+        end
     end)
     
     self:RestoreOptionsPosition()
@@ -808,7 +953,7 @@ SlashCmdList["ONESTORAGESCRAP"] = function(msg)
             safeList[itemID] = nil
             OneStorageScrap:SetOption("junkList", junkList)
             OneStorageScrap:SetOption("safeList", safeList)
-            local name = GetItemInfo(itemID) or ("Item " .. itemID)
+            local name = (GetItemInfoSafe and GetItemInfoSafe(itemID)) or ("Item " .. itemID)
             print("|cff00ccff[OneStorageScrap]|r Added " .. name .. " to custom junk list.")
             if OneStorageBag and OneStorageBag.frame and OneStorageBag.frame:IsShown() then
                 OneStorageBag:RefreshLayout()
@@ -829,7 +974,7 @@ SlashCmdList["ONESTORAGESCRAP"] = function(msg)
             junkList[itemID] = nil
             OneStorageScrap:SetOption("junkList", junkList)
             OneStorageScrap:SetOption("safeList", safeList)
-            local name = GetItemInfo(itemID) or ("Item " .. itemID)
+            local name = (GetItemInfoSafe and GetItemInfoSafe(itemID)) or ("Item " .. itemID)
             print("|cff00ccff[OneStorageScrap]|r Added " .. name .. " to protected safe list.")
             if OneStorageBag and OneStorageBag.frame and OneStorageBag.frame:IsShown() then
                 OneStorageBag:RefreshLayout()
